@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hello">Hello World, KinectServerActivity!</string>
+    <string name="app_name">KinectServer</string>
+    <string name="prefs_key_portnumber">PK_PORTNUMBER</string>
+    <string name="prefs_value_portnumber">45001</string>
+    <string name="option_menu_config_title">Config</string>
+    <string name="prefs_summary_portnumber">Binding port number</string>
+    <string name="prefs_title_port_number">Port number</string>
+    <string name="warning_message_portnumber_outofrange">Port number value is out of range (0 to 65535).</string>
+    <string name="option_menu_quit_title">Quit</string>
+    <string name="option_menu_start_title">Start</string>
+    <string name="option_menu_stop_title">Stop</string>
+</resources>

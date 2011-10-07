@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+	<PreferenceCategory android:title="Network">
+		<EditTextPreference android:dialogMessage="Set KinectServer Port Number" android:dialogTitle="Port Number" android:key="@string/prefs_key_portnumber" android:defaultValue="@string/prefs_value_portnumber" android:summary="@string/prefs_summary_portnumber" android:title="@string/prefs_title_port_number" android:inputType="number"/>
+	</PreferenceCategory>
+</PreferenceScreen>

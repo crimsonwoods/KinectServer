@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+	<item android:title="@string/option_menu_config_title" android:id="@+id/option_menu_config" android:icon="@android:drawable/ic_menu_preferences" >
+	</item>
+	<item android:title="@string/option_menu_quit_title" android:id="@+id/option_menu_quit" >
+	</item>
+	<item android:title="@string/option_menu_start_title" android:id="@+id/option_menu_start" >
+	</item>
+	<item android:title="@string/option_menu_stop_title" android:id="@+id/option_menu_stop" >
+	</item>
+</menu>
