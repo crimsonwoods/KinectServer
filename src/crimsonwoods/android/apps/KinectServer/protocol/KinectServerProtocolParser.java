@@ -43,6 +43,9 @@ public class KinectServerProtocolParser {
 			if (!isHeaderReceived()) {
 				return false;
 			}
+			if (null == header) {
+				return false;
+			}
 			return header.getBodyLength() == receivedBodyByteLength;
 		}
 		
@@ -74,6 +77,10 @@ public class KinectServerProtocolParser {
 			return header;
 		}
 		
+		public int getBodyByteLength() {
+			return (null == header) ? 0 : header.getBodyLength();
+		}
+		
 		public void setHeader(KinectServerProtocolHeader header) {
 			this.header = header;
 			if (null != header) {
@@ -95,7 +102,7 @@ public class KinectServerProtocolParser {
 		InputStream is = client.getInputStream();
 		try {
 			if (!xferContext.isHeaderReceived()) {
-				int n = read(is, xferContext.getHeaderBytes(), xferContext.getReceivedHeaderByteLength());
+				int n = read(is, xferContext.getHeaderBytes(), KinectServerProtocolHeader.HEADER_SIZE, xferContext.getReceivedHeaderByteLength());
 				if (0 > n) {
 					client.close();
 					return null;
@@ -107,7 +114,7 @@ public class KinectServerProtocolParser {
 				xferContext.setHeader(new KinectServerProtocolHeader(wrap(xferContext.getHeaderBytes())));
 			}
 			if (xferContext.isHeaderReceived() && !xferContext.isBodyReceived()) {
-				int n = read(is, xferContext.getBodyBytes(), xferContext.getReceivedBodyByteLength());
+				int n = read(is, xferContext.getBodyBytes(), xferContext.getBodyByteLength(), xferContext.getReceivedBodyByteLength());
 				if (0 > n) {
 					client.close();
 					return null;
@@ -144,6 +151,11 @@ public class KinectServerProtocolParser {
 					throw new UnknownKinectProtocolCommandTypeException();
 				}
 			}
+		} catch (Exception ex) {
+			if (null != xferContext) {
+				xferContext.clear();
+			}
+			throw new KinectServerRuntimeException(ex);
 		} finally {
 		}
 		return command;
@@ -155,8 +167,8 @@ public class KinectServerProtocolParser {
 		return buffer;
 	}
 	
-	private static int read(InputStream is, byte[] buffer, int offset) throws IOException {
-		final int length = buffer.length - offset;
+	private static int read(InputStream is, byte[] buffer, int size, int offset) throws IOException {
+		final int length = size - offset;
 		int read;
 		for (read = 0; read < length; ) {
 			int n = is.read(buffer, offset + read, length - read);
