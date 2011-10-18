@@ -13,9 +13,14 @@ import crimsonwoods.android.apps.KinectServer.NUI.*;
 import crimsonwoods.android.apps.KinectServer.NUI.SkeletonData.SkeletonTrackingState;
 import crimsonwoods.android.apps.KinectServer.NUI.Joint.JointID;
 
+import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Bitmap.Config;
+import android.hardware.Camera;
+import android.hardware.Camera.Size;
 import android.opengl.GLU;
 import android.opengl.GLSurfaceView.Renderer;
+import android.opengl.GLUtils;
 import android.os.SystemClock;
 import android.widget.TextView;
 
@@ -37,6 +42,13 @@ public class KinectServerGLRenderer implements Renderer {
 	private final IntBuffer lineBuffer = makeIntBuffer(3 * 5);
 	private final int[] pointArray = new int[3];
 	private final int[] lineArray = new int[3];
+	private Camera camera;
+	private int[] cameraPreview;
+	private Bitmap cameraPreviewBmp;
+	private final Object cameraPreviewLock = new Object();
+	private int cameraPreviewTextureId = -1;
+	private final IntBuffer cameraPreviewPositionBuffer = makeIntBuffer(2 * 4);
+	private final IntBuffer cameraPreviewVertexBuffer = makeIntBuffer(3 * 4);
 	
 	private final static float Z_MAX = 5.0f;
 	private final static int SKELETON_FRAME_COUNT = 4;
@@ -50,8 +62,8 @@ public class KinectServerGLRenderer implements Renderer {
 		
 		Random r = new Random(System.currentTimeMillis());
 		final int jointCount = Joint.JointID.Count.toInt();
-		jointColorBuffer = makeIntBuffer(Joint.JointID.Count.toInt() * ColorF.getFloatBufferSize());
-		boneColorBuffer = makeIntBuffer(5 * ColorF.getFloatBufferSize());
+		jointColorBuffer = makeIntBuffer(Joint.JointID.Count.toInt() * ColorX.getIntBufferSize());
+		boneColorBuffer = makeIntBuffer(5 * ColorX.getIntBufferSize());
 		
 		final float[] hsv = new float[3];
 		int color;
@@ -71,11 +83,68 @@ public class KinectServerGLRenderer implements Renderer {
 		boneColorBuffer.position(0);
 		
 		this.fpsView = fpsView;
+		
+		camera = Camera.open();
+        try {
+        	camera.setPreviewCallback(new Camera.PreviewCallback() {
+        		private int cameraFrameCount = 0;
+        		private final int FRAME_SKIP = 3;
+				@Override
+				public void onPreviewFrame(byte[] data, Camera camera) {
+					cameraFrameCount = ++cameraFrameCount % FRAME_SKIP;
+					if (0 != cameraFrameCount) {
+						return;
+					}
+					Size s = camera.getParameters().getPreviewSize();
+					if ((null == cameraPreview) || (cameraPreview.length < data.length)) {
+						cameraPreview = new int[data.length];
+					}
+					decodeYUV420SP(cameraPreview, data, s.width, s.height);
+					synchronized(cameraPreviewLock) {
+						if ((null == cameraPreviewBmp) || (cameraPreviewBmp.getWidth() != s.width) || (cameraPreviewBmp.getHeight() != s.height)) {
+							cameraPreviewBmp = Bitmap.createBitmap(cameraPreview, s.width, s.height, Config.ARGB_8888).copy(Config.ARGB_8888, true);
+						} else {
+							cameraPreviewBmp.setPixels(cameraPreview, 0, s.width, 0, 0, s.width, s.height);
+						}
+					}
+				}
+			});
+        	camera.startPreview();
+        } catch (Exception ex) {
+        	ex.printStackTrace();
+        }
 	}
 	
 	public void onDrawFrame(GL10 gl) {
 		gl.glClearColorx(bgColor.getRed(), bgColor.getGreen(), bgColor.getBlue(), bgColor.getAlpha());
-		gl.glClear(GL10.GL_COLOR_BUFFER_BIT | GL10.GL_DEPTH_BUFFER_BIT);
+		gl.glClear(GL10.GL_COLOR_BUFFER_BIT);
+		
+		boolean isDrawTexture = false;
+		synchronized(cameraPreviewLock) {
+			if (null != cameraPreviewBmp) {
+				gl.glEnable(GL10.GL_TEXTURE_2D);
+				if (-1 == cameraPreviewTextureId) {
+					cameraPreviewTextureId = loadTexture(gl, cameraPreviewBmp);
+				} else {
+					loadTexture(gl, cameraPreviewTextureId, cameraPreviewBmp);
+				}
+				isDrawTexture = true;
+			}
+		}
+		
+		if (isDrawTexture) {
+			gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+			gl.glEnableClientState(GL10.GL_TEXTURE_COORD_ARRAY);
+			gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
+			gl.glVertexPointer(3, GL10.GL_FIXED, 0, cameraPreviewVertexBuffer);
+			gl.glTexCoordPointer(2, GL10.GL_FIXED, 0, cameraPreviewPositionBuffer);
+			gl.glDrawArrays(GL10.GL_TRIANGLE_STRIP, 0, 4);
+		}
+		
+		gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+		gl.glDisableClientState(GL10.GL_TEXTURE_COORD_ARRAY);
+		gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
+		gl.glDisable(GL10.GL_TEXTURE_2D);
 		
 		SkeletonFrame frame = null;
 		synchronized(skeletonFrames) {
@@ -112,10 +181,11 @@ public class KinectServerGLRenderer implements Renderer {
 		final long t = SystemClock.elapsedRealtime();
 		if ((t - startTime) >= 1000) {
 			synchronized (skeletonFrames) {
-				final int c = dataFrameCount;
+				final int FRAME_COUNT  = frameCount;
+				final int DFRAME_COUNT = dataFrameCount;
 				KinectServerActivity.getHandler().post(new Runnable() {
 					public void run() {
-						fpsView.setText("FPS = " + frameCount + "\r\nDFPS = " + c);
+						fpsView.setText("FPS = " + FRAME_COUNT + "\r\nDFPS = " + DFRAME_COUNT);
 					}
 				});
 			}
@@ -143,12 +213,37 @@ public class KinectServerGLRenderer implements Renderer {
 		
 		gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
 		gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
-		
-		gl.glDisable(GL10.GL_TEXTURE_2D);
+		gl.glEnableClientState(GL10.GL_TEXTURE_COORD_ARRAY);
 		
 		startTime = SystemClock.elapsedRealtime();
 		frameCount = 0;
 		dataFrameCount = 0;
+		
+		float[] position = {
+			0.0f, 0.0f,
+			0.0f, 1.0f,
+			1.0f, 0.0f,
+			1.0f, 1.0f,
+		};
+		for(float f : position) {
+			cameraPreviewPositionBuffer.put(FixedPoint.toInt(f));
+		}
+		cameraPreviewPositionBuffer.position(0);
+		
+		final float left   =  1.5f;
+		final float top    = -1.0f;
+		final float right  = -1.0f;
+		final float bottom =  1.5f;
+		float[] vertex = {
+			left,  top,    0.0f,
+			left,  bottom, 0.0f,
+			right, top,    0.0f,
+			right, bottom, 0.0f,
+		};
+		for(float f : vertex) {
+			cameraPreviewVertexBuffer.put(FixedPoint.toInt(f));
+		}
+		cameraPreviewVertexBuffer.position(0);
 	}
 
 	public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -217,7 +312,7 @@ public class KinectServerGLRenderer implements Renderer {
 		points.position(0);
 		colors.position(0);
 		gl.glVertexPointer(3, GL10.GL_FIXED, 0, points);
-		gl.glColorPointer(ColorF.getFloatBufferSize(), GL10.GL_FIXED, 0, colors);
+		gl.glColorPointer(ColorX.getIntBufferSize(), GL10.GL_FIXED, 0, colors);
 		gl.glDrawArrays(GL10.GL_POINTS, 0, count);
 	}
 	
@@ -225,8 +320,27 @@ public class KinectServerGLRenderer implements Renderer {
 		points.position(0);
 		colors.position(0);
 		gl.glVertexPointer(3, GL10.GL_FIXED, 0, points);
-		gl.glColorPointer(ColorF.getFloatBufferSize(), GL10.GL_FIXED, 0, colors);
+		gl.glColorPointer(ColorX.getIntBufferSize(), GL10.GL_FIXED, 0, colors);
 		gl.glDrawArrays(GL10.GL_LINE_STRIP, 0, count);
+	}
+	
+	private int loadTexture(GL10 gl, Bitmap image) {
+		int[] textures = new int[1];
+		gl.glGenTextures(1, textures, 0);
+		final int texId = textures[0];
+		gl.glBindTexture(GL10.GL_TEXTURE_2D, texId);
+		gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_MIN_FILTER, GL10.GL_NEAREST);
+		gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_MAG_FILTER, GL10.GL_LINEAR);
+		gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_WRAP_S, GL10.GL_CLAMP_TO_EDGE);
+		gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_WRAP_T, GL10.GL_CLAMP_TO_EDGE);
+		gl.glTexEnvx(GL10.GL_TEXTURE_ENV, GL10.GL_TEXTURE_ENV_MODE, GL10.GL_REPLACE);
+		GLUtils.texImage2D(GL10.GL_TEXTURE_2D, 0, image, 0);
+		return texId;
+	}
+	
+	private void loadTexture(GL10 gl, int texId, Bitmap image) {
+		gl.glBindTexture(GL10.GL_TEXTURE_2D, texId);
+		GLUtils.texImage2D(GL10.GL_TEXTURE_2D, 0, image, 0);
 	}
 	
 	/**
@@ -448,6 +562,33 @@ public class KinectServerGLRenderer implements Renderer {
 		@Override
 		public int hashCode() {
 			return value;
+		}
+	}
+	
+	static private void decodeYUV420SP(int[] rgb, byte[] yuv420sp, int width, int height) {  
+		final int frameSize = width * height;
+	  
+		for (int j = 0, yp = 0; j < height; j++) {
+			int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
+			for (int i = 0; i < width; i++, yp++) {
+				int y = (0xff & ((int) yuv420sp[yp])) - 16;
+				if (y < 0) y = 0;
+				if ((i & 1) == 0) {
+					v = (0xff & yuv420sp[uvp++]) - 128;
+					u = (0xff & yuv420sp[uvp++]) - 128;
+				}
+	
+				int y1192 = 1192 * y;
+				int r = (y1192 + 1634 * v);
+				int g = (y1192 - 833 * v - 400 * u);
+				int b = (y1192 + 2066 * u);
+	
+				if (r < 0) r = 0; else if (r > 262143) r = 262143;
+				if (g < 0) g = 0; else if (g > 262143) g = 262143;
+				if (b < 0) b = 0; else if (b > 262143) b = 262143;
+	  
+				rgb[yp] = 0xff000000 | ((r << 6) & 0xff0000) | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
+			}
 		}
 	}
 }

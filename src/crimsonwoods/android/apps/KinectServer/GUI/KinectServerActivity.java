@@ -12,6 +12,8 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MenuItem.OnMenuItemClickListener;
 import android.view.ViewGroup.LayoutParams;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.TextView;
 
 public class KinectServerActivity extends Activity {
@@ -25,12 +27,15 @@ public class KinectServerActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        
         //Debug.startMethodTracing("KinectServer");
         
         handler = new Handler();
         
         fpsView = new TextView(this);
-        LayoutParams lp = new LayoutParams(100, 80);
+        LayoutParams fpsViewLp = new LayoutParams(100, 80);
         fpsView.setBackgroundColor(Color.TRANSPARENT);
         fpsView.setTextColor(Color.WHITE);
         fpsView.setText("FPS = ");
@@ -38,7 +43,7 @@ public class KinectServerActivity extends Activity {
         glSurfaceView = new KinectServerGLSurfaceView(this, fpsView);
         setContentView(glSurfaceView);
         
-        addContentView(fpsView, lp);
+        addContentView(fpsView, fpsViewLp);
         
         KinectServerPreference.createInstance(this);
         
